@@ -1,11 +1,16 @@
 package nju.androidchat.client.mvp2;
 
+import android.content.Context;
+import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.text.Html;
+import android.text.Spanned;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -13,6 +18,7 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -24,10 +30,12 @@ import nju.androidchat.client.Utils;
 import nju.androidchat.client.component.ItemTextReceive;
 import nju.androidchat.client.component.ItemTextSend;
 import nju.androidchat.client.component.OnRecallMessageRequested;
+import nju.androidchat.client.util.HttpUtil;
 
 @Log
 public class Mvp2TalkActivity extends AppCompatActivity implements Mvp2Contract.TalkView, TextView.OnEditorActionListener, OnRecallMessageRequested {
     private Mvp2Contract.TalkPresenter presenter;
+//    private Context context = this;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,19 +64,70 @@ public class Mvp2TalkActivity extends AppCompatActivity implements Mvp2Contract.
                     content.removeAllViews();
 
                     // 增加ItemText
-                    for (ClientMessage message : messages) {
-                        String text = String.format("%s", message.getMessage());
-                        // 如果是自己发的，增加ItemTextSend
-                        if (message.getSenderUsername().equals(this.presenter.getUsername())) {
-                            content.addView(new ItemTextSend(this, text, message.getMessageId(), this));
-                        } else {
-                            content.addView(new ItemTextReceive(this, text, message.getMessageId()));
-                        }
-                    }
+                    new Thread(() -> {
+                            for (ClientMessage message : messages) {
+                                String text = String.format("%s", message.getMessage());
+                                // 如果是自己发的，增加ItemTextSend
+                                        CharSequence charSequence = null;
+                                        if (isImage(text)) {
+                                            charSequence = getData(getUrl(text));
+                                        } else {
+                                            charSequence = text;
+                                        }
+                                        CharSequence cs = charSequence;
+
+
+                                        runOnUiThread(() -> {
+
+                                            if (message.getSenderUsername().equals(this.presenter.getUsername())) {
+                                                content.addView(new ItemTextSend(this, cs, message.getMessageId(), this));
+                                            } else {
+                                                content.addView(new ItemTextReceive(this, cs, message.getMessageId()));
+                                            }
+                                        });
+                                    }
+
+                        }).start();
 
                     Utils.scrollListToBottom(this);
                 }
         );
+    }
+
+    CharSequence getData(String URL) {
+        String htmlText =
+                "<img src=\""+URL+"\">";
+        Html.ImageGetter imgGetter = url -> {
+            Drawable drawable = null;
+            System.out.println("URL: "+url);
+            try {
+                InputStream in = HttpUtil.getImageViewInputStream(url);
+                drawable = Drawable.createFromStream(in, url);//从输入流创建Drawable
+                in.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            drawable.setBounds(0,0,drawable.getIntrinsicWidth(),drawable.getIntrinsicHeight());
+            return drawable;
+        };
+        CharSequence text = null;
+        try {
+            text = Html.fromHtml(htmlText, imgGetter, null);//创建一个Spanned
+            System.out.println("Text Exist");
+        } catch (Exception e1) {
+            text = null;
+        }
+        return text;
+    }
+
+    private boolean isImage(String text){
+        if(text!=null&&text.length()>7&&text.substring(0,5).equals("![]({")&&text.substring(text.length()-2).equals("})")){
+            return true;
+        }return false;
+    }
+
+    private String getUrl(String text){
+        return text.substring(5,text.length()-2);
     }
 
     @Override
